@@ -2,6 +2,12 @@
 *.docx
 *.doc
 
+# PDF files
+*.pdf
+
+# Zip files
+*.zip
+
 # Node.js dependencies
 node_modules/
 
