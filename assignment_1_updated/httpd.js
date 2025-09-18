@@ -21,10 +21,22 @@ handleRequest('/information', 'GET', (req, res) => {
 
     const urlObj = new URL(req.url, 'http://localhost:8000');
 
+    // UPDATED CODE
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     let queries = ""
     urlObj.searchParams.forEach((value, name) => {
-      queries += `<li>${name}=${value}</li>\n`
+      queryValue = escapeHtml(name + "=" + value);
+      queries += `<li>${queryValue}</li>\n`
     })
+    // UPDATED CODE
 
     let html = data
       .replace('{{method}}', req.method)
@@ -40,7 +52,7 @@ handleRequest('/information', 'GET', (req, res) => {
 
 const server = http.createServer((req, res) => {
   console.log('URL: ' + req.url);
-  var urlObj = new URL(req.url, 'http://localhost:8000');
+  var urlObj = new URL('http://localhost:8000' + (req.url || '/')); // UPDATED CODE
   console.log("urlObj");
   console.log(urlObj);
 
