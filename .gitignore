@@ -1,6 +1,10 @@
 # Sandbox
 sandbox.js
 
+# Temporary files
+*.tmp
+*.temp
+
 # Word files
 *.docx
 *.doc

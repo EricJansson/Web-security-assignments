@@ -193,7 +193,7 @@ handleRequest('/logout', 'GET', (req, res) => {
 
 const server = https.createServer(options, (req, res) => {
   var urlObj = new URL('http://localhost:8000' + (req.url || '/'));
-
+  console.log("req.url: " + req.url + " -> pathname: " + urlObj.pathname);
   // AUTH-check
   if (isProtected(urlObj.pathname)) {
     const sid = getSessionId(req);
@@ -233,14 +233,7 @@ const server = https.createServer(options, (req, res) => {
     }
   }
   if (req.method === 'GET') {
-    let pathname = urlObj.pathname;
-    if (urlObj.pathname === '/') {
-      pathname = '/index.html';
-      console.log("          Serving /index.html for /");
-      throw new Error("Debug break");
-    }
-    
-    
+    const pathname = req.url;
     const filePath = path.join(__dirname, 'public', pathname);
 
     fs.stat(filePath, (err, stats) => {
@@ -372,4 +365,4 @@ function handleDirectoryRequest(filePath, urlPath, res) {
   });
 }
 
-server.listen(8000, () => console.log("Server running at http://localhost:8000/"));
+server.listen(8000, () => console.log("Server running at https://localhost:8000/"));
