@@ -4,6 +4,7 @@ const path = require('path');
 const cookie = require('cookie');
 const crypto = require('crypto');
 const express = require('express');
+const mustacheExpress = require('mustache-express');
 
 console.log("Server starting");
 
@@ -25,6 +26,10 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 // --- In-memory session store (sessionid -> { username, createdAt }) ---
 const sessions = new Map();
+
+app.engine('mustache', mustacheExpress());
+app.set('view engine', 'mustache');
+app.set('views', path.join(__dirname, 'templates'));
 
 // --- Express middleware ---
 app.use(express.json());
@@ -65,11 +70,28 @@ function setSqueakSessionCookie(res, sessionObj) {
   const cookieVal = JSON.stringify(sessionObj);
   const header = cookie.serialize('squeak-session', cookieVal, {
     path: '/',
-    httpOnly: false,   // TODO // Remove - deliberate vulnerability for teaching stored XSS
-    // sameSite: 'Lax',
+    httpOnly: true, // UPDATED
+    sameSite: 'Lax', // UPDATED
     secure: true
   });
   res.setHeader('Set-Cookie', header);
+}
+
+// --- CSRF protection middleware ---
+function requireCSRF(req, res, next) {
+  // must be authenticated first
+  if (!req.session || !req.session.sessionid) return res.status(401).end();
+  const sess = sessions.get(req.session.sessionid);
+  if (!sess) return res.status(401).end();
+  const sent = (req.body && req.body.csrf);
+  if (!sent || !sess.csrf) return res.status(403).send('CSRF token missing');
+
+  const a = Buffer.from(sent, 'utf8');
+  const b = Buffer.from(sess.csrf, 'utf8');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(403).send('Invalid CSRF token');
+  }
+  next();
 }
 
 // --- Session middleware ---
@@ -103,33 +125,24 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res) => {
   if (!req.session) {
-    return res.sendFile(path.join(STATIC_DIR, 'login.html'));
+    return res.render('login'); // UPDATED - Uses render instead of sendFile
   }
+  // UPDATED SECTION - Now uses variables instead of a hardcoded HTML text
+  const squeaks = loadSqueaks().map(s => ({
+    username: s.username,
+    timeFmt: new Date(s.time).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Stockholm' })
+      + ' ' +
+      new Date(s.time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Stockholm' }),
+    squeak: s.squeak
+  }));
 
-  const squeaks = loadSqueaks();
-  let html = fs.readFileSync(path.join(STATIC_DIR, 'index.html'), 'utf8');
-  const rendered = squeaks.map(s => {
-    return `
-    <div class="card mb-2">
-      <div class="card-header">
-      ${s.username} &nbsp; 
-        <span class="float-right">${
-          new Date(s.time).toLocaleDateString('en-GB',{weekday:'short', timeZone:'Europe/Stockholm'})
-        } ${
-          new Date(s.time).toLocaleTimeString('en-GB',{hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'Europe/Stockholm'})
-        }</span>
-      </div>
-      <div class="card-body">
-          <p class="card-text">${s.squeak}</p>
-      </div>
-    </div>`;
-  }).join('\n');
-
-  html = html.replace('<!-- SQUEAKS -->', rendered)
-    .replace('<!-- USERNAME -->', req.session.username);
-
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  return res.send(html);
+  const cur_session = sessions.get(req.session.sessionid);    // CSRF Token related
+  return res.render('index', {
+    username: req.session.username,
+    squeaks,
+    csrf: cur_session?.csrf    // CSRF Token related
+  });
+  // UPDATED SECTION END - Ends with rendering the index file with the variable values
 });
 
 
@@ -142,8 +155,14 @@ app.post('/signin', (req, res) => {
   try {
     const derived = crypto.pbkdf2Sync(password, entry.salt, entry.iterations, entry.keylen, entry.digest).toString('hex');
     if (derived === entry.hash) {
+      // CSRF Token related
       const sid = newToken();
-      sessions.set(sid, { username, createdAt: Date.now() });
+      const csrfToken = newToken();
+      sessions.set(sid, {
+        username,
+        csrf: csrfToken,
+        createdAt: Date.now()
+      });
       setSqueakSessionCookie(res, { sessionid: sid, username });
       return res.json({ success: true });
     } else {
@@ -161,18 +180,21 @@ app.post('/signup', (req, res) => {
   const { username, password } = req.body || {};
   const users = loadUsers();
 
-  if (!username || !password) return res.status(400).json({ success: false, reason: 'missing' });
-  if (username.length < 4) return res.json({ success: false, reason: 'username' });
-  if (users[username]) return res.json({ success: false, reason: 'username' });
-  if (password.length < 8) return res.json({ success: false, reason: 'password' });
-  
-  let validPassword = password !== undefined && password.length >= 8;
-  if (validPassword) {
-    let nameregex = new RegExp(username);
-    validPassword &= !nameregex.test(password);
-  }
-  if (!validPassword) return res.json({ success: false, reason: 'password' });
+  if (!username || !password)
+    return res.status(400).json({ success: false, reason: 'missing' });
+  if (username.length < 4)
+    return res.json({ success: false, reason: 'username' });
+  if (users[username])
+    return res.json({ success: false, reason: 'username' });
+  if (password.length < 8 || password.length > 128)
+    return res.json({ success: false, reason: 'password' });
 
+  const USERNAME_REGEX = /^[A-Za-z0-9_-]{4,64}$/;
+  if (!USERNAME_REGEX.test(username))
+    return res.json({ success: false, reason: 'username' });
+  if (password.toLowerCase().includes(username.toLowerCase()))
+    return res.json({ success: false, reason: 'password' });
+   
   // create and save user to server
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512').toString('hex');
@@ -181,28 +203,33 @@ app.post('/signup', (req, res) => {
 
   // create session and set cookie
   const sid = newToken();
-  sessions.set(sid, { username, createdAt: Date.now() });
+  const csrfToken = newToken();
+  sessions.set(sid, {
+    username,
+    csrf: csrfToken,
+    createdAt: Date.now()
+  });
   setSqueakSessionCookie(res, { sessionid: sid, username });
   return res.json({ success: true });
 });
 
 // POST /signout - invalidates session
-app.post('/signout', (req, res) => {
+app.post('/signout', requireCSRF, (req, res) => { // CSRF Token related
   if (req.session) {
     sessions.delete(req.session.sessionid);
   }
   // clear cookie
   res.setHeader('Set-Cookie', cookie.serialize('squeak-session', '', { path: '/', expires: new Date(0) }));
-  return res.json({ success: true });
+  return res.redirect(302, '/');
 });
 
 // POST /squeak - expects application/x-www-form-urlencoded from the form with fields 'text'
 // requires a valid session; if missing, the request is dropped silently (per assignment)
-app.post('/squeak', (req, res) => {
+app.post('/squeak', requireCSRF, (req, res) => {
   if (!req.session || !req.body)
-    return res.status(403).send('Forbidden');
+    return res.redirect(303, '/?err=Forbidden');
   if (!req.body.squeak || req.body.squeak.length === 0)
-    return res.status(400).send('Bad Request');
+    return res.redirect(303, '/?err=Bad Request');
 
   const squeak = req.body.squeak;
   const username = req.session.username;
