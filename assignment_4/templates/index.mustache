@@ -17,23 +17,33 @@
                 <div class="input-group-text">{{username}}</div>
             </div>
             <input type="text" name="squeak" class="form-control" id="squeaktext">
-            <input type="hidden" name="csrf" value="{{csrf}}"> <!-- CSRF Token related -->
+            <div class="input-group-append">
+
+                <select class="custom-select" name="recipient" id="recipient">
+                    <option value="all" selected>@ Everyone</option>
+                    {{#users}}
+                    <option value="{{username}}">@ {{username}}</option>
+                    {{/users}}
+                </select>
+
+            </div>
         </div>
         <button type="submit" class="btn btn-primary mr-sm-2 disabled">Squeak!</button>
     </form>
 
     <form method="POST" action="/signout" class="form-inline mt-2 mt-md-0">
-        <input type="hidden" name="csrf" value="{{csrf}}">
         <button type="submit" class="btn btn-primary">Sign out</button>
     </form>
 </div>
 
 <div class="container">
 
+    <h4>Squeaks</h4>
+
     {{#squeaks}}
     <div class="card mb-2">
         <div class="card-header">
-            {{username}}
+            {{squeak_username}}
             <span class="float-right">{{timeFmt}}</span>
         </div>
         <div class="card-body">
@@ -41,7 +51,21 @@
         </div>
     </div>
     {{/squeaks}}
-     
+
+    <h4>Squeals</h4>
+
+    {{#squeals}}
+    <div class="card mb-2">
+        <div class="card-header">
+            {{squeal_username}}
+            <span class="float-right">{{timeFmt}}</span>
+        </div>
+        <div class="card-body">
+            <p class="card-text">{{squeal}}</p>
+        </div>
+    </div>
+    {{/squeals}}
+
 </div>
 
 
