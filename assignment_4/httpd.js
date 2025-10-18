@@ -69,7 +69,6 @@ async function authenticate(username, password) {
 
 async function addUser(username, password) {
   const users = await getAllUsers();
-
   const userExist = users.some(u => u.username === username);
   if (userExist) {
     console.log("User already exists:", username);
@@ -120,24 +119,6 @@ async function render(username, req, res) {
   let squeaks = await getSqueaks("all");
   let squeals = await getSqueaks(username);
 
-  squeaks = squeaks.map(s => ({
-    squeak_username: s.name,
-    timeFmt: s.time,
-    squeak: s.squeak
-  }));
-
-  squeals = squeals.map(s => ({
-    squeal_username: s.name,
-    timeFmt: s.time,
-    squeal: s.squeak
-  }));
-
-  console.log("Squeaks to render:");
-  console.log(squeaks);
-  console.log("")
-  console.log("Squeals to render:");
-  console.log(squeals);
-
   res.render('index', {
     username: username,
     users: users,
@@ -153,8 +134,6 @@ const CRT_PATH = path.join(CERT_DIR, 'server.crt');
 const KEY_PATH = path.join(CERT_DIR, 'server.key');
 
 // --- Config / constants ---
-const PASSWD_FILE = path.join(__dirname, 'passwd');   // existing from assignment 2
-const SQUEAKS_FILE = path.join(__dirname, 'squeaks'); // will be created
 const STATIC_DIR = path.join(__dirname, 'public');
 
 const ID_BYTES = 32;        // session id length (bytes)
@@ -164,9 +143,6 @@ console.log("Server starting...");
 const app = express();
 const PORT = 8000;
 
-// --- In-memory session store (sessionid -> { username, createdAt }) ---
-const sessions = new Map();
-
 app.engine('mustache', mustacheExpress());
 app.set('view engine', 'mustache');
 app.set('views', path.join(__dirname, 'templates'));
@@ -175,10 +151,6 @@ app.set('views', path.join(__dirname, 'templates'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(STATIC_DIR, { index: false }));
-
-function newToken(bytes = ID_BYTES) {
-  return crypto.randomBytes(bytes).toString('hex');
-}
 
 function setSqueakSessionCookie(res, sessionObj) {
   const cookieVal = JSON.stringify(sessionObj);
@@ -246,7 +218,7 @@ app.post('/signin', async (req, res) => {
     const ok = await authenticate(username, password);
     if (!ok) return res.json({ success: false });
 
-    const sid = await newSession(); // returns a new session id and stores { id } in DB
+    const sid = await newSession();
     setSqueakSessionCookie(res, { sessionid: sid, username });
     return res.json({ success: true });
   } catch (e) {
@@ -259,39 +231,47 @@ app.post('/signin', async (req, res) => {
 // (vulnerable to ReDoS when username is attacker-controlled)
 app.post('/signup', async (req, res) => {
   const { username, password } = req.body || {};
-  const users = getAllUsers();
+  const users = await getAllUsers();
   const userExist = users.some(u => u.username === username);
-  if (!username || !password)
+  console.log('signup attempt', { username: username || null, password: password });
+  if (!username || !password) {
+    console.log('signup: missing username or password', { usernamePresent: !!username, passwordPresent: !!password });
     return res.status(400).json({ success: false, reason: 'missing' });
-  if (username.length < 4)
-    return res.json({ success: false, reason: 'username' });
-  if (userExist) {
-    console.log("User already exists (MongoDB):", username);
+  }
+  if (username.length < 4) {
+    console.log('signup: username too short', { username, length: username.length });
     return res.json({ success: false, reason: 'username' });
   }
-  if (password.length < 8 || password.length > 128)
+  if (userExist) {
+    console.log("User already exists (MongoDB):", username);
+    console.log('signup: userExists check failed', { username });
+    return res.json({ success: false, reason: 'username' });
+  }
+  if (password.length < 8 || password.length > 128) {
+    console.log('signup: password length invalid', { length: password ? password.length : 0 });
     return res.json({ success: false, reason: 'password' });
+  }
 
   const USERNAME_REGEX = /^[A-Za-z0-9_-]{4,64}$/;
-  if (!USERNAME_REGEX.test(username))
+  if (!USERNAME_REGEX.test(username)) {
+    console.log('signup: username regex validation failed', { username });
     return res.json({ success: false, reason: 'username' });
-  if (password.toLowerCase().includes(username.toLowerCase()))
+  }
+  if (password.toLowerCase().includes(username.toLowerCase())) {
+    console.log('signup: password contains username', { username });
     return res.json({ success: false, reason: 'password' });
+  }
   /*
     // create and save user to server
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512').toString('hex');
     users[username] = { salt, hash, iterations: 210000, keylen: 64, digest: 'sha512' };
   */
-  addUser(username, password); // MongoDB
+  await addUser(username, password); // MongoDB
 
-  // create session and set cookie
-  const sid = newToken();
-  sessions.set(sid, {
-    username,
-    createdAt: Date.now()
-  });
+  const sid = await newSession();
   setSqueakSessionCookie(res, { sessionid: sid, username });
+  
   return res.json({ success: true });
 });
 

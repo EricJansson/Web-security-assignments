@@ -39,12 +39,11 @@
 <div class="container">
 
     <h4>Squeaks</h4>
-
     {{#squeaks}}
     <div class="card mb-2">
         <div class="card-header">
-            {{squeak_username}}
-            <span class="float-right">{{timeFmt}}</span>
+            {{name}}
+            <span class="float-right">{{time}}</span>
         </div>
         <div class="card-body">
             <p class="card-text">{{squeak}}</p>
@@ -53,15 +52,14 @@
     {{/squeaks}}
 
     <h4>Squeals</h4>
-
     {{#squeals}}
     <div class="card mb-2">
         <div class="card-header">
-            {{squeal_username}}
-            <span class="float-right">{{timeFmt}}</span>
+            {{name}}
+            <span class="float-right">{{time}}</span>
         </div>
         <div class="card-body">
-            <p class="card-text">{{squeal}}</p>
+            <p class="card-text">{{squeak}}</p>
         </div>
     </div>
     {{/squeals}}
