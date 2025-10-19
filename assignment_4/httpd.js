@@ -57,13 +57,10 @@ async function testMongo() {
 }
 
 async function authenticate(username, password) {
-  console.log("Authenticating user:", username);
   let user = await credentials.findOne({
     username: username,
     password: password
   });
-  console.log("User:");
-  console.log(user);
   return user !== null;
 }
 
@@ -135,8 +132,6 @@ const KEY_PATH = path.join(CERT_DIR, 'server.key');
 
 // --- Config / constants ---
 const STATIC_DIR = path.join(__dirname, 'public');
-
-const ID_BYTES = 32;        // session id length (bytes)
 
 console.log("Server starting...");
 
@@ -211,11 +206,13 @@ app.get('/', async (req, res) => {
 app.post('/signin', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
+    console.log('Username||password missing. Username status: ', username, ', password status: ', password);
     return res.json({ success: false });
   }
 
   try {
     const ok = await authenticate(username, password);
+    console.log('Username status: ', username, ', password status: ', password);
     if (!ok) return res.json({ success: false });
 
     const sid = await newSession();
