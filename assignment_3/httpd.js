@@ -16,14 +16,14 @@ const CRT_PATH = path.join(CERT_DIR, 'server.crt');
 const KEY_PATH = path.join(CERT_DIR, 'server.key');
 
 // --- Config / constants ---
-const PASSWD_FILE = path.join(__dirname, 'passwd');   // existing from assignment 2
-const SQUEAKS_FILE = path.join(__dirname, 'squeaks'); // will be created
+const PASSWD_FILE = path.join(__dirname, 'passwd');
+const SQUEAKS_FILE = path.join(__dirname, 'squeaks');
 const STATIC_DIR = path.join(__dirname, 'public');
 
-const ID_BYTES = 32;        // session id length (bytes)
+const ID_BYTES = 32;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
-// --- In-memory session store (sessionid -> { username, createdAt }) ---
+// --- In-memory session store ---
 const sessions = new Map();
 
 // --- Express middleware ---
@@ -65,8 +65,7 @@ function setSqueakSessionCookie(res, sessionObj) {
   const cookieVal = JSON.stringify(sessionObj);
   const header = cookie.serialize('squeak-session', cookieVal, {
     path: '/',
-    httpOnly: false,   // TODO // Remove - deliberate vulnerability for teaching stored XSS
-    // sameSite: 'Lax',
+    httpOnly: false,
     secure: true
   });
   res.setHeader('Set-Cookie', header);
@@ -95,7 +94,7 @@ app.use((req, res, next) => {
       // ignore parse errors -> treat as no session
     }
   }
-  next(); // TODO
+  next();
 });
 
 
@@ -156,7 +155,6 @@ app.post('/signin', (req, res) => {
 });
 
 // POST /signup - expects application/json { username, password }
-// (vulnerable to ReDoS when username is attacker-controlled)
 app.post('/signup', (req, res) => {
   const { username, password } = req.body || {};
   const users = loadUsers();
@@ -197,7 +195,6 @@ app.post('/signout', (req, res) => {
 });
 
 // POST /squeak - expects application/x-www-form-urlencoded from the form with fields 'text'
-// requires a valid session; if missing, the request is dropped silently (per assignment)
 app.post('/squeak', (req, res) => {
   if (!req.session || !req.body)
     return res.status(403).send('Forbidden');
