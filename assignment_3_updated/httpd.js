@@ -78,6 +78,24 @@ function setSqueakSessionCookie(res, sessionObj) {
 }
 
 // --- CSRF protection middleware ---
+function verifyCookieCsrf(req, csrfFromBody) {
+  const cookies = cookie.parse(req.headers.cookie || '');
+  const cookieToken = cookies['cookieCsrf'];
+
+  if (!csrfFromBody || !cookieToken) return false;
+
+  const a = Buffer.from(csrfFromBody, 'utf8');
+  const b = Buffer.from(cookieToken, 'utf8');
+  if (a.length !== b.length) return false;
+
+  try {
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+
 function requireCSRF(req, res, next) {
   // must be authenticated first
   if (!req.session || !req.session.sessionid) return res.status(401).end();
@@ -124,9 +142,17 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res) => {
   if (!req.session) {
-    return res.render('login'); // UPDATED - Uses render instead of sendFile
+    // UPDATED SECTION
+    const cookieCsrf = newToken();
+    const header = cookie.serialize('cookieCsrf', cookieCsrf, {
+      path: '/',
+      httpOnly: false,   // must be readable by JS
+      sameSite: 'Lax',
+      secure: true
+    });
+    res.setHeader('Set-Cookie', header);
+    return res.render('login', { cookieCsrf: cookieCsrf });
   }
-  // UPDATED SECTION - Now uses variables instead of a hardcoded HTML text
   const squeaks = loadSqueaks().map(s => ({
     username: s.username,
     timeFmt: new Date(s.time).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Stockholm' })
@@ -146,7 +172,14 @@ app.get('/', (req, res) => {
 
 
 app.post('/signin', (req, res) => {
-  const { username, password } = req.body || {};
+  const { username, password, cookieCsrf } = req.body || {};
+
+  if (!verifyCookieCsrf(req, cookieCsrf)) {
+    console.log(cookieCsrf)
+    console.log('CSRF verification failed during signin');
+    return res.json({ success: false });
+  }
+
   const users = loadUsers();
   const entry = users[username];
   if (!entry) return res.json({ success: false });
@@ -175,7 +208,12 @@ app.post('/signin', (req, res) => {
 
 // POST /signup - expects application/json { username, password }
 app.post('/signup', (req, res) => {
-  const { username, password } = req.body || {};
+  const { username, password, cookieCsrf } = req.body || {};
+
+  if (!verifyCookieCsrf(req, cookieCsrf)) {
+    return res.json({ success: false, reason: 'cookie-csrf' });
+  }
+
   const users = loadUsers();
 
   if (!username || !password)
@@ -192,7 +230,7 @@ app.post('/signup', (req, res) => {
     return res.json({ success: false, reason: 'username' });
   if (password.toLowerCase().includes(username.toLowerCase()))
     return res.json({ success: false, reason: 'password' });
-   
+
   // create and save user to server
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512').toString('hex');

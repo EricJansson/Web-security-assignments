@@ -4,7 +4,8 @@ function signup(button) {
 
   let username = $('#signupusername').val();
   let password = $('#signuppassword').val();
-  let credentials = { username: username, password: password };
+  let csrf = $('#signup_csrf').val(); // Updated! CSRF Token related
+  let credentials = { username: username, password: password, cookieCsrf: csrf };
 
   $.post(
     {
@@ -44,7 +45,8 @@ function signin(button) {
 
   let username = $('#username').val();
   let password = $('#password').val();
-  let credentials = { username: username, password: password };
+  let csrf = $('#signin_csrf').val(); // Updated! CSRF Token related
+  let credentials = { username: username, password: password, cookieCsrf: csrf };
 
   $.post(
     {

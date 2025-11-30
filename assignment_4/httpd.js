@@ -147,19 +147,17 @@ async function sessionMiddleware(req, res, next) {
   if (!val) return next();
 
   try {
-    const parsed = JSON.parse(val); // expected: { sessionid, username }
+    const parsed = JSON.parse(val); 
     const sid = parsed && parsed.sessionid;
     if (!sid) return next();
 
-    const found = await findSession(sid); // looks up { id: sid } in Mongo
+    const found = await findSession(sid);
     if (!found) return next();
 
-    // Trust username from cookie per assignment model (only id is server-side)
     req.session = { sessionid: sid, username: parsed.username || null };
 
   } catch (e) {
     console.log('Error parsing session cookie. "app.use()" ERR: ', e);
-    // ignore parse errors -> treat as no session
   }
 
   next();
@@ -174,7 +172,6 @@ app.get('/', async (req, res) => {
     return res.render('login');
   }
   try {
-    // calls your render(username, req, res)
     await render(req.session.username, req, res);
   } catch (e) {
     console.log('Render failed:', e);
@@ -203,8 +200,6 @@ app.post('/signin', async (req, res) => {
   }
 });
 
-// POST /signup - expects application/json { username, password }
-// (vulnerable to ReDoS when username is attacker-controlled)
 app.post('/signup', async (req, res) => {
   const { username, password } = req.body || {};
   const users = await getAllUsers();
@@ -237,13 +232,8 @@ app.post('/signup', async (req, res) => {
     console.log('signup: password contains username', { username });
     return res.json({ success: false, reason: 'password' });
   }
-  /*
-    // create and save user to server
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512').toString('hex');
-    users[username] = { salt, hash, iterations: 210000, keylen: 64, digest: 'sha512' };
-  */
-  await addUser(username, password); // MongoDB
+  
+  await addUser(username, password); 
 
   const sid = await newSession();
   setSqueakSessionCookie(res, { sessionid: sid, username });
@@ -254,17 +244,14 @@ app.post('/signup', async (req, res) => {
 // POST /signout - invalidates session
 app.post('/signout', async (req, res) => {
   if (req.session) {
-    await invalidateSession(req.session.sessionid); // MongoDB
+    await invalidateSession(req.session.sessionid);
   } else {
     return res.redirect(303, '/?err=Forbidden');
   }
-  // clear cookie
   res.setHeader('Set-Cookie', cookie.serialize('squeak-session', '', { path: '/', expires: new Date(0) }));
   return res.redirect(302, '/');
 });
 
-// POST /squeak - expects application/x-www-form-urlencoded from the form with fields 'text'
-// requires a valid session; if missing, the request is dropped silently (per assignment)
 app.post('/squeak', (req, res) => {
   if (!req.session || !req.body)
     return res.redirect(303, '/?err=Forbidden');
@@ -277,7 +264,7 @@ app.post('/squeak', (req, res) => {
   const username = req.session.username;
   const recipient = req.body.recipient;
 
-  addSqueak(username, recipient, squeak); // MongoDB
+  addSqueak(username, recipient, squeak);
 
   return res.redirect(302, '/');
 });
@@ -294,7 +281,6 @@ https.createServer(httpsOpts, app).listen(PORT, () => {
   console.log(`✅ Squeak! HTTPS server running at https://localhost:${PORT}/`);
 });
 
-// on shutdown (Ctrl+C, Docker stop, etc.)
 process.on('SIGINT', async () => {
   try {
     console.log("Shutting down server...");

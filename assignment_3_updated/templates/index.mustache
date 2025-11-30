@@ -23,8 +23,8 @@
     </form>
 
     <form method="POST" action="/signout" class="form-inline mt-2 mt-md-0">
-        <input type="hidden" name="csrf" value="{{csrf}}">
         <button type="submit" class="btn btn-primary">Sign out</button>
+        <input type="hidden" name="csrf" value="{{csrf}}"> <!-- CSRF Token related -->
     </form>
 </div>
 

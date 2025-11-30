@@ -9,6 +9,7 @@ const { MongoClient } = require("mongodb");
 
 // --- MongoDB globals ---
 const url = "mongodb+srv://erja:IBkSDB46nE9ncS58@websec.4oqw5jp.mongodb.net/?retryWrites=true&w=majority&appName=websec";
+const SECRET = 'short_and_easily_crackable_secret_key_that_should_be_longer_so_use_env_vars_instead_please_thanks_bye_now_hugs_and_kisses_/_Eric';
 
 const client = new MongoClient(url);
 
@@ -24,7 +25,7 @@ async function mongo() {
     /* load collections into globals - maybe not the best, but suffices */
     squeaks = await db.collection('squeaks');
     credentials = await db.collection('credentials');
-    sessionsMongo = await db.collection('sessions');
+    sessionsMongo = await db.collection('sessions_with_username');
 
     console.log("Connected to MongoDB!");
   } catch (err) {
@@ -36,7 +37,60 @@ async function mongo() {
 
 mongo().catch(console.dir);
 
+
+// UPDATED CODE    \/
+
+function signStr(s) {
+  return crypto.createHmac('sha256', SECRET).update(s, 'utf8').digest('hex');
+}
+
+function setSignedSessionCookie(res, sessionid, username) {
+  const payload = `${sessionid}|${username}`;
+  const b64 = Buffer.from(payload, 'utf8').toString('base64');
+  const sig = signStr(b64);
+  const cookieVal = `${b64}.${sig}`;
+  const header = cookie.serialize('squeak-session', cookieVal, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: true
+  });
+  res.setHeader('Set-Cookie', header);
+}
+
+function verifySignedCookie(cookieVal) {
+  if (typeof cookieVal !== 'string') return null;
+  const parts = cookieVal.split('.');
+  if (parts.length !== 2) return null;
+  const [b64, sig] = parts;
+  if (!/^[0-9a-f]{64}$/.test(sig)) return null;
+
+  const expectedHex = signStr(b64);
+  const a = Buffer.from(expectedHex, 'hex');
+  const b = Buffer.from(sig, 'hex');
+  if (a.length !== b.length) return null;
+  if (!crypto.timingSafeEqual(a, b)) return null;
+
+  let payload;
+  try {
+    payload = Buffer.from(b64, 'base64').toString('utf8');
+  } catch (e) { return null; }
+  const [sessionid, username] = payload.split('|');
+  if (typeof sessionid !== 'string' || typeof username !== 'string') return null;
+
+  return { sessionid, username };
+}
+// UPDATED CODE    /\
+
+
+
 async function authenticate(username, password) {
+  // UPDATED CODE  \/ 
+  // Lightweight input validation    
+  if (!username || !password) return false;
+  if (typeof username !== 'string' || typeof password !== 'string') return false;
+  // UPDATED CODE  /\
+
   let user = await credentials.findOne({
     username: username,
     password: password
@@ -62,12 +116,17 @@ async function getAllUsers() {
 }
 
 async function findSession(sessionid) {
-  return await sessionsMongo.findOne({ id: sessionid });
+  // UPDATED CODE   \/
+  return await sessionsMongo.findOne(
+    { id: sessionid },
+    { projection: { _id: 0, id: 1, username: 1 } }
+  );
+  // UPDATED CODE   /\
 }
 
-async function newSession() {
+async function newSession(username) {
   let sessionid = crypto.randomBytes(64).toString('hex');
-  await sessionsMongo.insertOne({ id: sessionid });
+  await sessionsMongo.insertOne({ id: sessionid, username: username });
   return sessionid;
 }
 
@@ -76,6 +135,13 @@ async function invalidateSession(sessionid) {
 }
 
 async function addSqueak(username, recipient, squeak) {
+  // UPDATED CODE  \/
+  if (typeof username !== 'string' || typeof recipient !== 'string' || typeof squeak !== 'string') {
+    console.log("Type error in addSqueak - Username: ", typeof username, ", recipient: ", typeof recipient, ", squeak: ", typeof squeak);
+    console.log('Invariant: addSqueak() expects strings');
+    return false;
+  }
+  // UPDATED CODE  /\
   let options = { weekday: 'short', hour: 'numeric', minute: 'numeric' };
   let time = new Date().toLocaleDateString('sv-SE', options);
   await squeaks.insertOne({
@@ -84,10 +150,18 @@ async function addSqueak(username, recipient, squeak) {
     recipient: recipient,
     squeak: squeak
   });
+  return true;
 }
 
 async function getSqueaks(username) {
-  return await squeaks.find({ recipient: username }).sort({ _id: -1 }).toArray(); // Sort to get latest first
+  if (!username || typeof username !== "string") {
+    console.log("Error getting squeaks for user:", username);
+    console.log("username type:", typeof username);
+    return null;
+  }
+  return await squeaks.find({ 
+    recipient: username 
+  }).sort({ _id: -1 }).toArray(); // Sort to get latest first
 }
 
 async function render(username, req, res) {
@@ -126,16 +200,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(STATIC_DIR, { index: false }));
 
-function setSqueakSessionCookie(res, sessionObj) {
-  const cookieVal = JSON.stringify(sessionObj);
-  const header = cookie.serialize('squeak-session', cookieVal, {
-    path: '/',
-    httpOnly: true,
-    sameSite: 'Lax',
-    secure: true
-  });
-  res.setHeader('Set-Cookie', header);
-}
 
 // --- Session middleware ---
 async function sessionMiddleware(req, res, next) {
@@ -144,24 +208,25 @@ async function sessionMiddleware(req, res, next) {
   req.session = null;
 
   const val = cookies['squeak-session'];
-  if (!val) return next();
-
-  try {
-    const parsed = JSON.parse(val); // expected: { sessionid, username }
-    const sid = parsed && parsed.sessionid;
-    if (!sid) return next();
-
-    const found = await findSession(sid); // looks up { id: sid } in Mongo
-    if (!found) return next();
-
-    // Trust username from cookie per assignment model (only id is server-side)
-    req.session = { sessionid: sid, username: parsed.username || null };
-
-  } catch (e) {
-    console.log('Error parsing session cookie. "app.use()" ERR: ', e);
-    // ignore parse errors -> treat as no session
+  if (!val) {
+    console.log("No session cookie found");
+    return next();
   }
 
+  // UPDATED CODE    \/
+  const verified = verifySignedCookie(val);
+  if (!verified) {
+    console.log("Not a valid signed cookie");
+    return next();
+  }
+
+  const found = await findSession(verified.sessionid);
+  if (!found) {
+    console.log("Session not found in MongoDB");
+    return next();
+  }
+  req.session = { sessionid: found.id, username: found.username };
+  // UPDATED CODE    /\
   next();
 }
 
@@ -174,7 +239,6 @@ app.get('/', async (req, res) => {
     return res.render('login');
   }
   try {
-    // calls your render(username, req, res)
     await render(req.session.username, req, res);
   } catch (e) {
     console.log('Render failed:', e);
@@ -184,18 +248,28 @@ app.get('/', async (req, res) => {
 
 app.post('/signin', async (req, res) => {
   const { username, password } = req.body || {};
+  // UPDATED CODE  \/
   if (!username || !password) {
-    console.log('Username||password missing. Username status: ', username, ', password status: ', password);
+    console.log("Error - /signin:")
+    console.log('Username||password missing. Username: ', username, ', password: ', password);
     return res.json({ success: false });
   }
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    console.log("Error - /signin:")
+    console.log("Invalid username/password type. Username type: ", (typeof username), ", password type: ", (typeof password));
+    return res.json({ success: false });
+  }
+  // UPDATED CODE  /\
 
   try {
     const ok = await authenticate(username, password);
+    console.log("/signin:")
     console.log('Username status: ', username, ', password status: ', password);
     if (!ok) return res.json({ success: false });
 
-    const sid = await newSession();
-    setSqueakSessionCookie(res, { sessionid: sid, username });
+    const sid = await newSession(username);
+    setSignedSessionCookie(res, sid, username); // UPDATED CODE - Uses new function
+    console.log("/signin: authentication successful");
     return res.json({ success: true });
   } catch (e) {
     console.log('Error during signin:', e);
@@ -203,29 +277,38 @@ app.post('/signin', async (req, res) => {
   }
 });
 
-// POST /signup - expects application/json { username, password }
-// (vulnerable to ReDoS when username is attacker-controlled)
 app.post('/signup', async (req, res) => {
+  // UPDATED CODE  \/
   const { username, password } = req.body || {};
+  if (!username || !password) {
+    console.log("Error - /signup:")
+    console.log('Username||password missing. Username: ', username, ', password: ', password);
+    return res.status(400).json({ success: false, reason: 'missing' });
+  }
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    console.log("Error - /signup:")
+    console.log("Invalid username/password type. Username type: ", (typeof username), ", password type: ", (typeof password));
+    return res.status(400).json({ success: false, reason: 'type mismatch' });
+  }
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(username)) {
+    console.log("Error - /signup:")
+    console.log('Invalid username format/length', { username, length: username.length });
+    return res.status(400).json({ success: false, reason: 'username' });
+  }
+  // UPDATED CODE  /\
+  if (password.length < 8 || password.length > 128) {
+    console.log("Error - /signup:")
+    console.log('Invalid password length', { length: password ? password.length : 0 });
+    return res.status(400).json({ success: false, reason: 'password' });
+  }
+
   const users = await getAllUsers();
   const userExist = users.some(u => u.username === username);
   console.log('signup attempt', { username: username || null, password: password });
-  if (!username || !password) {
-    console.log('signup: missing username or password', { usernamePresent: !!username, passwordPresent: !!password });
-    return res.status(400).json({ success: false, reason: 'missing' });
-  }
-  if (username.length < 4) {
-    console.log('signup: username too short', { username, length: username.length });
-    return res.json({ success: false, reason: 'username' });
-  }
   if (userExist) {
     console.log("User already exists (MongoDB):", username);
     console.log('signup: userExists check failed', { username });
     return res.json({ success: false, reason: 'username' });
-  }
-  if (password.length < 8 || password.length > 128) {
-    console.log('signup: password length invalid', { length: password ? password.length : 0 });
-    return res.json({ success: false, reason: 'password' });
   }
 
   const USERNAME_REGEX = /^[A-Za-z0-9_-]{4,64}$/;
@@ -237,34 +320,26 @@ app.post('/signup', async (req, res) => {
     console.log('signup: password contains username', { username });
     return res.json({ success: false, reason: 'password' });
   }
-  /*
-    // create and save user to server
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512').toString('hex');
-    users[username] = { salt, hash, iterations: 210000, keylen: 64, digest: 'sha512' };
-  */
-  await addUser(username, password); // MongoDB
-
-  const sid = await newSession();
-  setSqueakSessionCookie(res, { sessionid: sid, username });
   
+  await addUser(username, password);
+
+  const sid = await newSession(username);
+  setSignedSessionCookie(res, sid, username); // UPDATED CODE - Uses new function
+
   return res.json({ success: true });
 });
 
 // POST /signout - invalidates session
 app.post('/signout', async (req, res) => {
   if (req.session) {
-    await invalidateSession(req.session.sessionid); // MongoDB
+    await invalidateSession(req.session.sessionid);
   } else {
     return res.redirect(303, '/?err=Forbidden');
   }
-  // clear cookie
   res.setHeader('Set-Cookie', cookie.serialize('squeak-session', '', { path: '/', expires: new Date(0) }));
   return res.redirect(302, '/');
 });
 
-// POST /squeak - expects application/x-www-form-urlencoded from the form with fields 'text'
-// requires a valid session; if missing, the request is dropped silently (per assignment)
 app.post('/squeak', (req, res) => {
   if (!req.session || !req.body)
     return res.redirect(303, '/?err=Forbidden');
@@ -277,8 +352,24 @@ app.post('/squeak', (req, res) => {
   const username = req.session.username;
   const recipient = req.body.recipient;
 
-  addSqueak(username, recipient, squeak); // MongoDB
+  // UPDATED CODE  \/
+  if (!username || !recipient || !squeak) {
+    console.log("Error /squeak - Data missing")
+    return res.status(400).json({ success:false });
+  }
+  if (typeof recipient !== 'string' || typeof squeak !== 'string' || typeof username !== 'string') {
+    console.log("Error /squeak - Type error")
+    return res.status(400).json({ success:false });
+  }
+  if (squeak.length === 0 || squeak.length > 2000) {
+    console.log("Error /squeak - ")
+    return res.status(400).json({ success:false });
+  }
 
+  success = addSqueak(username, recipient, squeak);
+  if (!success)
+    return res.redirect(303, '/?err=Internal Server Error: Could not add squeak');
+  // UPDATED CODE  /\
   return res.redirect(302, '/');
 });
 
@@ -294,7 +385,6 @@ https.createServer(httpsOpts, app).listen(PORT, () => {
   console.log(`✅ Squeak! HTTPS server running at https://localhost:${PORT}/`);
 });
 
-// on shutdown (Ctrl+C, Docker stop, etc.)
 process.on('SIGINT', async () => {
   try {
     console.log("Shutting down server...");
