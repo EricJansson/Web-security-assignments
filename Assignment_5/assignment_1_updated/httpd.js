@@ -4,7 +4,14 @@ var path = require('path');
 
 console.log("Server starting");
 
-const CSPpolicy = "default-src 'self'; script-src 'self'; style-src 'self';" // CSP RELATED!!
+const CSPpolicy = 
+  `default-src 'none'; ` +
+  `script-src 'self'; ` +
+  `connect-src 'self'; ` +
+  `img-src 'self'; ` +
+  `style-src 'self'; ` +
+  `frame-ancestors 'self'; ` +
+  `form-action 'self'`;
 
 const routes = [];
 

