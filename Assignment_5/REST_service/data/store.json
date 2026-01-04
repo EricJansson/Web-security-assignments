@@ -1,1 +1,12 @@
-{}
+{
+  "daniel": [
+    {
+      "time": 1767457630809,
+      "body": {
+        "stolen": "squeak-session=%7B%22sessionid%22%3A%22203acdfa8b329b977d66e9b3fbcca6b48f9154d2c985fb98fbd569e6e831161b%22%2C%22username%22%3A%22e%22%7D",
+        "page": "https://localhost:8000/",
+        "t": "2026-01-03T16:27:10"
+      }
+    }
+  ]
+}
